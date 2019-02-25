@@ -1,83 +1,68 @@
 package repice;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.ObjectReader;
-import com.fasterxml.jackson.databind.ObjectWriter;
-import com.google.common.io.CharStreams;
-import org.json.JSONArray;
-import org.json.JSONException;
+import org.joda.time.DateTime;
+import org.joda.time.DateTimeUtils;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
-import org.skyscreamer.jsonassert.JSONAssert;
-import recipe.Ingredient;
-import recipe.Recipe;
-import recipe.Unit;
+import recipe.RecipeFinder;
 
+import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.util.List;
 
-import static com.google.common.collect.Lists.newArrayList;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static recipe.Unit.grams;
-import static recipe.Unit.slices;
 
-public final class RecipeTest {
+public class RecipeFinderTest {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final String NAME = "grilled cheese on toast";
-    private static final String ITEM = "bread";
-    private static String json;
+    private static String csvPath;
+    private static String jsonPath;
+
+    private RecipeFinder recipeFinder;
 
     @BeforeClass
-    public static void onlyOnce() throws IOException {
-        try (final InputStream inputStream = RecipeTest.class.getResourceAsStream("/recipes.json");
-             final InputStreamReader inputStreamReader = new InputStreamReader(inputStream);) {
-            json = CharStreams.toString(inputStreamReader);
-        }
+    public static void onlyOnce() {
+        csvPath = getPath("/fridge.csv");
+        jsonPath = getPath("/recipes.json");
+    }
+
+    @Before
+    public void setUp() {
+        recipeFinder = new RecipeFinder();
+    }
+
+    @After
+    public void resetSystemTime() {
+        DateTimeUtils.setCurrentMillisSystem();
     }
 
     @Test
-    public final void canDeserializeFromJson() throws IOException {
-        final ObjectReader objectReader = MAPPER.readerFor(new TypeReference<List<Recipe>>() {
-        });
-        final List<Recipe> recipes = objectReader.readValue(json);
-        assertNotNull(recipes);
-        assertEquals(2, recipes.size());
-
-        final Recipe recipe = recipes.get(0);
-        assertEquals(NAME, recipe.getName());
-
-        final List<Ingredient> ingredients = recipe.getIngredients();
-        assertNotNull(ingredients);
-        assertEquals(2, ingredients.size());
-
-        final Ingredient ingredient = ingredients.get(0);
-        assertEquals(ITEM, ingredient.getItem());
-        assertEquals(2, ingredient.getAmount());
-        assertEquals(slices, ingredient.getUnit());
+    public void canGetRecipeForToday() throws IOException {
+        assertRecipe("salad sandwich");
     }
 
     @Test
-    public final void canSerializeToJson() throws JsonProcessingException, JSONException {
-        final Ingredient bread = getIngredient(ITEM, 2, slices);
-        final List<Recipe> recipes = newArrayList(new Recipe.FridgeItemBuilder().withName(NAME).withIngredient(bread)
-            .withIngredient(getIngredient("cheese", 2, slices)).build(), new Recipe.FridgeItemBuilder()
-            .withName("salad sandwich").withIngredient(bread)
-            .withIngredient(getIngredient("mixed salad", 100, grams)).build());
-
-        final ObjectWriter objectWriter = MAPPER.writerFor(new TypeReference<List<Recipe>>() {
-        });
-        final JSONArray actual = new JSONArray(objectWriter.writeValueAsString(recipes));
-        final JSONArray expected = new JSONArray(json);
-        JSONAssert.assertEquals(expected, actual, true);
+    public void canGetRecipeForFutureDate() throws IOException {
+        setFutureDate(2019, 12, 20);
+        assertRecipe("grilled cheese on toast");
     }
 
-    private Ingredient getIngredient(final String item, final int amount, final Unit unit) {
-        return new Ingredient.IngredientBuilder().withItem(item).withAmount(amount).withUnit(unit).build();
+    @Test
+    public void canGetRecipeWithExpiredIngredients() throws IOException {
+        setFutureDate(2019, 12, 30);
+        assertRecipe("Order Takeout");
+    }
+
+    private void assertRecipe(final String name) throws IOException {
+        assertEquals(name, recipeFinder.getRecipeForToday(csvPath, jsonPath));
+    }
+
+    private static String getPath(final String resource) {
+        return new File(RecipeFinderTest.class.getResource(resource).getPath()).getAbsolutePath();
+    }
+
+    private void setFutureDate(int year, int month, int day) {
+        DateTimeUtils.setCurrentMillisFixed(new DateTime().withYear(year).withMonthOfYear(month).withDayOfMonth(day)
+                .getMillis());
     }
 }
